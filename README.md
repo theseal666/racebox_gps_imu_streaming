@@ -1,6 +1,8 @@
-Here is the updated, clean `README.md` text incorporating a dedicated section for setting up the local virtual environment (`venv`) before installing dependencies.
+The `install.py` script doesn't handle the Git cloning or pulling processes natively—it assumes the code files are already sitting on the local drive in order to execute them and compile the service profiles.
 
-You can copy everything below this line directly into your file:
+Because of that, downloading the code from GitHub and updating it later down the line should be documented manually right at the beginning of the setup workflow in the `README.md`.
+
+Here is the fully updated, complete text for your **README.md** incorporating the Git setup commands. You can copy everything below this line directly:
 
 ---
 
@@ -9,6 +11,33 @@ You can copy everything below this line directly into your file:
 Karukera is a real-time marine telemetry system designed specifically for high-speed vessels. By combining raw high-frequency IMU data with sub-meter precision GNSS tracking from a RaceBox Micro, the system acts as an inertial navigation computer. It dynamically filters out hull vibrations, tracks precise boat attitude (Heel & Trim), profiles mechanical wave impacts (Slam Gs), and lists wave encounters in a rolling ledger—all delivered instantly to a web dashboard via low-latency WebSockets.
 
 Project Repository: `https://github.com/theseal666/racebox_gps_imu_streaming/tree/main`
+
+---
+
+## Repository Installation & Updates
+
+Because the universal setup script requires local file access to compile your host services, downloading the codebase and keeping it updated is handled directly via standard Git operations.
+
+### Initial Repository Cloning
+
+To pull a fresh copy of the application down to your local machine, open your terminal or command prompt and run:
+
+```bash
+git clone https://github.com/theseal666/racebox_gps_imu_streaming.git
+cd racebox_gps_imu_streaming
+
+```
+
+### Pulling Future Updates
+
+When changes are pushed to the main repository, you can update your local files by navigating to the project directory and pulling down the latest modifications:
+
+```bash
+git pull origin main
+
+```
+
+*Note: If you are running the hub as a background daemon or inside a running Docker container, make sure to restart your running service instance after executing a pull request to apply the code modifications.*
 
 ---
 
