@@ -1,6 +1,6 @@
 # Karukera High-Speed Telemetry Hub
 
-Karukera is a real-time marine telemetry system designed specifically for high-speed vessels. By combining raw high-frequency IMU data with sub-meter precision GNSS tracking from a RaceBox Micro, the system acts as an inertial navigation computer. It dynamically filters out hull vibrations, tracks precise boat attitude (Heel & Trim), profiles mechanical wave impacts (Slam Gs), and lists wave encounters in a rolling ledger—all delivered instantly to a web dashboard via low-latency WebSockets.
+Karukera is a real-time marine telemetry system designed specifically for high-speed vessels. By combining raw high-frequency IMU data with sub-meter precision GNSS tracking from a RaceBox (any racebox will work, this is tested on Micro), the system acts as an inertial navigation computer. It dynamically filters out hull vibrations, tracks precise boat attitude (Heel & Trim), profiles mechanical wave impacts (Slam Gs), and lists wave encounters in a rolling ledger—all delivered instantly to a web dashboard via low-latency WebSockets.
 
 Project Repository: `https://github.com/theseal666/racebox_gps_imu_streaming/tree/main`
 
