@@ -1,0 +1,62 @@
+🛥️ Karukera High-Speed Telemetry Hub
+Karukera is a real-time marine telemetry system designed specifically for high-speed vessels (such as the MAT 12.20). By combining raw high-frequency IMU data with sub-meter precision GNSS tracking from a RaceBox Micro, the system acts as an inertial navigation computer. It dynamically filters out hull vibrations, tracks precise boat attitude (Heel & Trim), profiles mechanical wave impacts (Slam Gs), and lists wave encounters in a rolling ledger—all delivered instantly to a web dashboard via low-latency WebSockets.
+🛠️ System Architecture & Dependencies
+The backend engine is built on asynchronous Python architectures to process dense 25 Hz binary streams without blocking the UI rendering engine or disk I/O operations.
+Core Architecture Components:
+Bleak Async Pipeline: Manages the low-level Bluetooth Low Energy (BLE) GATT connection notifications. It rebuilds incoming fragmented byte buffers back into structural hex chunks.
+FastAPI & ASGI Event Loops: Runs a local web server hosting an administrative API control panel alongside a high-frequency WebSocket state broadcaster.
+Dynamic UI Canvas: A featherweight browser frontend using Leaflet.js for high-precision vector track pathing and vanilla HTML5 canvas rendering engine for real-time 3D attitude visualization.
+Required Software Packages:
+Run the following command to install the required Python libraries:
+pip install fastapi uvicorn bleak
+🚀 Cross-Platform Installation & Service Deployment
+This project includes a universal orchestration tool (install.py) that installs software dependencies and registers the backend telemetry script as an automated system service depending on your operating system.
+🍏 macOS Deployment (Native LaunchDaemon)
+macOS uses a native launchd service architecture to run the application invisibly in the background on startup.
+Run the multi-platform installer script:
+python install.py
+Manually register and start the daemon immediately:
+launchctl load ~/Library/LaunchAgents/com.karukera.telemetry.plist
+Logs are outputted continuously to /tmp/karukera.log for debugging and performance auditing.
+🪟 Windows Deployment (Silent Startup Background Script)
+Windows handles persistent services by leveraging a combined batch script wrapped inside an invisible Visual Basic (.vbs) execution layer to suppress annoying terminal windows from hanging on your taskbar.
+Run the setup compiler from an elevated command prompt:
+python install.py
+The installer automatically hooks into the user AppData...\Programs\Startup system profile folder.
+The server launches invisibly whenever the Windows user profile loads.
+🐧 Linux Deployment (Isolated Docker Containerization)
+Because Bluetooth kernel bindings can conflict heavily across different Linux distributions, a dedicated Docker virtualization environment is used. This isolates the app completely while giving it direct raw hardware access.
+Ensure docker and docker-compose are installed on your Linux machine.
+Spin up the cluster using host network bindings:
+docker compose up -d --build
+⚠️ Note: The docker-compose.yml mounts the system's host /var/run/dbus socket directly inside the container virtual space. This is required for bleak to communicate with your Linux host BlueZ Bluetooth adapter.
+📐 How the Physics & Wave-Tracking Engines Work
+The core of Karukera's intelligence lies in translating raw, noisy sensor data measured relative to the moving boat into fixed coordinates relative to the earth.
+1. Sensor Orientation Calibration (Digital Taring)
+If the physical RaceBox is mounted at a slight angle on a bulkhead, your baseline readings will be skewed. When you click Set Neutral Tare, the system snapshots the resting structural offsets (roll offset, pitch offset) and mathematically subtracts them from all subsequent raw inputs.
+2. 3D Attitude Calculation (Heel & Trim)
+The system tracks structural tilt by measuring how the constant gravity vector (1 G = 9.81 m/s²) distributes across the internal accelerometer axes.
+Trim (Pitch): Calculated by analyzing the forward-facing X-axis acceleration against the remaining combined lateral and vertical force vectors:
+Pitch = arctan2(-Ax, sqrt(Ay² + Az²)) - pitch_offset
+Heel (Roll): Calculated by assessing the lateral tilt on the Y-axis against the vertical Z-axis vector:
+Roll = arctan2(Ay, Az) - roll_offset
+3. True Vertical Heave Extraction (Z-Axis Isolation)
+When a boat crashes over waves, the internal Z-axis accelerometer experiences a complex mix of gravity, centrifugal force, and wave lift. To isolate the pure vertical movement of the water, the system rotates the boat's frame back into a global vertical plane using a geometric translation matrix:
+True Z = (Ax * sin(Pitch)) - (Ay * sin(Roll) * cos(Pitch)) + (Az * cos(Roll) * cos(Pitch))
+To find the actual acceleration from just the waves (Motion Z), we subtract Earth's constant gravity (1 G) and any calibration taring offset:
+Motion Z = True Z - 1.0 - z_offset
+4. Mathematical Wave Height Profiling (The Ledger Engine)
+The rolling ledger does not just guess wave heights—it models individual wave periods using kinematic calculation loops:
+  ▲ Motion Z Acceleration
+  │
++0.08G┼ ── ── ── ── ── ── ── ──┌───┐ ◄─── State: "Climbing" (Trigger Wave Start)
+│                       /
+0.0G┼──────────────────────/───────\────────────────────────► Time (s)
+│                     /
+-0.05G┼ ── ── ── ── ── ── ── ── ── ── └───┐ ◄─── State: "Falling" (Trigger Evaluation)
+│                                    ___/
+Ascent Trigger: When Motion Z spikes past a threshold (+0.08 G), a wave encounter is initiated. The system locks a high-precision wave_start_time stamp and tracks the maximum upward acceleration peak (a_peak).
+Descent Trigger: When the acceleration drops through zero and falls past a negative threshold (-0.05 G), the boat has crested the wave. The system calculates the total transit duration (t = now - wave_start_time).
+Kinematic Displacement Equation: If the transit duration matches a valid ocean wave period window (0.4s < t < 8.0s), the physical displacement (wave height in meters) is calculated by integrating the acceleration over time:
+Height (m) = 0.5 * (a_peak * 9.81) * (t / 2)²
+Slam Analysis: The maximum lateral force (Ay) recorded during this specific window is stamped as the wave's Slam G, providing an immediate metric of hull stress and wave steepness.
