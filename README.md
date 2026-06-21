@@ -1,11 +1,3 @@
-The `install.py` script doesn't handle the Git cloning or pulling processes natively—it assumes the code files are already sitting on the local drive in order to execute them and compile the service profiles.
-
-Because of that, downloading the code from GitHub and updating it later down the line should be documented manually right at the beginning of the setup workflow in the `README.md`.
-
-Here is the fully updated, complete text for your **README.md** incorporating the Git setup commands. You can copy everything below this line directly:
-
----
-
 # Karukera High-Speed Telemetry Hub
 
 Karukera is a real-time marine telemetry system designed specifically for high-speed vessels. By combining raw high-frequency IMU data with sub-meter precision GNSS tracking from a RaceBox Micro, the system acts as an inertial navigation computer. It dynamically filters out hull vibrations, tracks precise boat attitude (Heel & Trim), profiles mechanical wave impacts (Slam Gs), and lists wave encounters in a rolling ledger—all delivered instantly to a web dashboard via low-latency WebSockets.
