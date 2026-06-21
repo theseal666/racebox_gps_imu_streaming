@@ -1,8 +1,58 @@
+Here is the updated, clean `README.md` text incorporating a dedicated section for setting up the local virtual environment (`venv`) before installing dependencies.
+
+You can copy everything below this line directly into your file:
+
+---
+
 # Karukera High-Speed Telemetry Hub
 
 Karukera is a real-time marine telemetry system designed specifically for high-speed vessels. By combining raw high-frequency IMU data with sub-meter precision GNSS tracking from a RaceBox Micro, the system acts as an inertial navigation computer. It dynamically filters out hull vibrations, tracks precise boat attitude (Heel & Trim), profiles mechanical wave impacts (Slam Gs), and lists wave encounters in a rolling ledger—all delivered instantly to a web dashboard via low-latency WebSockets.
 
 Project Repository: `https://github.com/theseal666/racebox_gps_imu_streaming/tree/main`
+
+---
+
+## Local Virtual Environment Setup
+
+To keep dependencies isolated and avoid version conflicts with other Python projects on your machine, it is highly recommended to run the application inside a local Virtual Environment (`venv`).
+
+Follow these steps based on your operating system to set up and activate the virtual environment folder before installing dependencies:
+
+### macOS & Linux
+
+1. Navigate to your cloned repository folder in the terminal and create the environment:
+```bash
+python3 -m venv venv
+
+```
+
+
+2. Activate the virtual environment:
+```bash
+source venv/bin/activate
+
+```
+
+
+
+### Windows
+
+1. Open a command prompt, navigate to your repository folder, and create the environment:
+```cmd
+python -m venv venv
+
+```
+
+
+2. Activate the virtual environment:
+```cmd
+venv\Scripts\activate
+
+```
+
+
+
+*Note: Once activated, your terminal prompt will be prefixed with `(venv)`. Any package installed via pip will now live entirely isolated inside this local directory.*
 
 ---
 
@@ -18,7 +68,7 @@ The backend engine is built on asynchronous Python architectures to process dens
 
 ### Required Software Packages
 
-Run the following command to install the required Python libraries:
+With your virtual environment activated, run the following command to install the required Python libraries locally:
 
 ```bash
 pip install fastapi uvicorn bleak
@@ -99,6 +149,8 @@ python install.py
 ### Linux Deployment (Isolated Docker Containerization)
 
 Because Bluetooth kernel bindings can conflict heavily across different Linux distributions, a dedicated Docker virtualization environment is used. This isolates the app completely while giving it direct raw hardware access.
+
+*(Note: If deploying via Docker, creating a local virtual environment on your host machine is unnecessary, as the container manages its own internal isolated Python layer automatically.)*
 
 1. Ensure `docker` and `docker-compose` are installed on your Linux machine.
 2. Spin up the cluster using host network bindings:
