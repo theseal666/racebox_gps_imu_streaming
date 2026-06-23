@@ -1,4 +1,3 @@
-```markdown
 # Karukera Telemetry Hub: RaceBox Micro GPS & IMU Streaming
 
 A high-performance, real-time data bridge and analytics dashboard designed to stream high-frequency (25Hz) binary data from a **RaceBox Micro** over Bluetooth Low Energy (BLE) to an interactive local web interface. Optimized for marine deployment, it features live 3D attitude estimation, wave height ledger tracking, rolling G-force/gyro graphs, and automated CSV logging.
