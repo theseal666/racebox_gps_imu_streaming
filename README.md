@@ -1,6 +1,6 @@
 # Karukera Telemetry Hub: RaceBox Micro GPS & IMU Streaming
 
-A high-performance, real-time data bridge and analytics dashboard designed to stream high-frequency (25Hz) binary data from a **RaceBox Micro** over Bluetooth Low Energy (BLE) to an interactive local web interface. Optimized for marine deployment, it features live 3D attitude estimation, wave height ledger tracking, rolling G-force/gyro graphs, and automated CSV logging.
+A high-performance, real-time data bridge and analytics dashboard designed to stream high-frequency (25Hz) binary data from a **RaceBox Micro** over Bluetooth Low Energy (BLE) to an interactive local web interface. Optimized for marine deployment, it features live 3D attitude estimation, wave height ledger tracking, rolling G-force/gyro graphs, automated CSV logging, and seamless integration with **Signal K**.
 
 ---
 
@@ -9,6 +9,7 @@ A high-performance, real-time data bridge and analytics dashboard designed to st
 * **Vessel Computer:** Raspberry Pi 4 / Pi 5 running bare-metal Raspberry Pi OS (Debian-based).
 * **Sensor Hardware:** RaceBox Micro (configured via BLE UART).
 * **Network:** Access via local network (Ethernet/Wi-Fi router on the boat).
+* **Local Integration:** Signal K Server running locally on port `3000`.
 
 ---
 
@@ -28,6 +29,7 @@ sudo apt install bluetooth bluez libglib2.0-dev -y
 
 * `fastapi` & `uvicorn` — High-throughput telemetry server utilizing `websockets` for full-duplex data pushes.
 * `bleak` — Asynchronous Bluetooth Low Energy client wrapper interacting with the BlueZ system D-Bus.
+* `httpx` — Non-blocking asynchronous HTTP client to pipeline 25Hz measurements into Signal K.
 
 ---
 
@@ -46,14 +48,14 @@ cd racebox_gps_imu_streaming
 python3 -m venv venv
 source venv/bin/activate
 
-# Install core packages
-pip install fastapi uvicorn bleak websockets
+# Install core packages and the async HTTP transport layer
+pip install fastapi uvicorn bleak websockets httpx
 
 ```
 
 ### Update Workflow (Git Pull & Sync)
 
-When updates are pushed to the repository (such as payload adjustments or internal recording overrides), use this streamlined execution sequence to update the bare-metal environment:
+When updates are pushed to the repository, use this streamlined execution sequence to pull the latest changes and sync dependencies:
 
 ```bash
 # 1. Navigate to the working path
@@ -64,39 +66,83 @@ git pull origin main
 
 # 3. Enter the environment and verify dependency alignment
 source venv/bin/activate
-pip install --upgrade fastapi uvicorn bleak websockets
-
-# 4. Fire up the data pipeline
-python3 racebox_stream.py
+pip install --upgrade fastapi uvicorn bleak websockets httpx
 
 ```
-
-### 🔧 Crucial Linux Bluetooth Boot Steps
-
-On a bare-metal Raspberry Pi OS installation, the hardware radio chip is often software-blocked by default on startup. Run these commands to wake up the radio controller and grant non-root script execution privileges:
-
-```bash
-# 1. Unblock the physical RF chip interface
-sudo rfkill unblock bluetooth
-
-# 2. Power up the local Bluetooth controller antenna
-sudo bluetoothctl power on
-
-# 3. Grant Python raw socket capabilities (Crucial for running inside venv without 'sudo')
-sudo setcap 'cap_net_raw,cap_net_admin=eip' $(readlink -f $(which python3))
-
-```
-
-> **Verification Step:** To ensure the Pi can physically see the hardware broadcasts before initializing the API pipeline, execute `bluetoothctl scan on`. Look for your device address (e.g., `[NEW] Device AA:BB:CC:DD:EE:FF RaceBox Micro`).
 
 ---
 
-## 🗺️ Accessing the Dashboard
+## 🛠️ Automated Daemon Deployment (`systemd` Service)
 
-The application binds directly to host network bridge `0.0.0.0` on port `8000`. This allows any tablet, smartphone, or navigation screen connected to your vessel's onboard local network to view the interface.
+To ensure the telemetry pipeline boots automatically whenever the vessel's computer powers up—without needing to manually activate virtual environments, configure RF variables, or keep terminal windows open—configure it as a persistent Linux background service.
 
-* **Local Access (On the Pi):** `http://127.0.0.1:8000`
-* **Network Access (On Deck):** `http://<your-raspberry-pi-ip>:8000`
+### 1. Create the Service File
+
+Generate a system configuration file within your OS runtime structures:
+
+```bash
+sudo nano /etc/systemd/system/racebox.service
+
+```
+
+### 2. Paste the System Configuration
+
+Insert the configuration block below. Note the `+` prefix on the `ExecStartPre` parameters; this forces systemd to execute hardware radio configurations with root privileges while running the main Python logic securely under the restricted user context (`theseal`):
+
+```ini
+[Unit]
+Description=Karukera RaceBox Telemetry Hub API
+After=bluetooth.target network.target
+
+[Service]
+Type=simple
+User=theseal
+WorkingDirectory=/home/theseal/racebox_gps_imu_streaming
+# The '+' prefix forces these commands to run as root to clear the permission block
+ExecStartPre=+/usr/sbin/rfkill unblock bluetooth
+ExecStartPre=+/usr/bin/bluetoothctl power on
+ExecStart=/home/theseal/racebox_gps_imu_streaming/venv/bin/python3 racebox_stream.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+
+```
+
+### 3. Initialize and Start the Daemon
+
+Register the service blueprint, instruct the Linux kernel to schedule it on every subsequent cold boot cycle, and activate the stream instantly:
+
+```bash
+# Reload systemd to cache the new service layout
+sudo systemctl daemon-reload
+
+# Enable automatic start on system bootup
+sudo systemctl enable racebox.service
+
+# Start the background service right now
+sudo systemctl start racebox.service
+
+```
+
+### 🧭 Handy Service Diagnostic Commands on the Water
+
+* **Check live operational status:** `sudo systemctl status racebox.service`
+* **Stream live console print statements / logs:** `sudo journalctl -u racebox.service -f`
+* **Force-restart the background pipeline loop:** `sudo systemctl restart racebox.service`
+
+---
+
+## 🌊 Signal K Core Integration Engine
+
+The telemetry hub interacts natively with an active local **Signal K Server** via its loopback interface (`http://127.0.0.1:3000`). Data transmission is handled non-blocking via the HTTP Delta API.
+
+### Transmitted Sensor Paths
+
+1. `navigation.attitude.roll` — Transmitted continuously at **25Hz** (Calculated in real-time and mapped cleanly from degrees into **radians** to adhere to NMEA/Signal K international design frameworks).
+2. `navigation.attitude.pitch` — Transmitted continuously at **25Hz** (Mapped directly in **radians**).
+3. `environment.wind.wave.height` — Transmitted asynchronously (in meters) the exact moment a discrete wave crest-to-trough cycle completes and crosses the onboard ledger.
 
 ---
 
