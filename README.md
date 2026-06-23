@@ -146,6 +146,23 @@ To link your 25Hz telemetry into your central navigation network, configure an i
 
 ---
 
+## 🗺️ Signal K Data Dictionary
+
+The Hub pushes updates over local UDP port `20222` to `vessels.self`. To ensure parameters never disappear from your Signal K data browser or instrument displays when the boat is stationary, these paths are continuously streamed on every single valid sensor packet:
+
+| Signal K Path | Type | Unit | Description / Trigger Behavior |
+| :--- | :--- | :--- | :--- |
+| `navigation.position` | Object | lat/lon | Live GNSS coordinates. |
+| `navigation.speedOverGround` | Float | m/s | Vessel velocity converted from Knots to SI meters per second. |
+| `navigation.courseOverGround` | Float | Radians | True heading calculated relative to the Earth's grid. |
+| `navigation.gnss.hdop` | Float | Meter | Horizontal Dilution of Precision (Accuracy baseline). |
+| `navigation.gnss.satellites` | Integer | Count | Active satellite vehicle count. |
+| `navigation.attitude.roll` | Float | Radians | Port/Starboard heel angle (Relative to neutral tare baseline). |
+| `navigation.attitude.pitch` | Float | Radians | Bow/Stern trim profile. |
+| `environment.wind.waveHeight` | Float | Meter | Calculated wave amplitude from peak heave periods ($0.0$ at dock). |
+| `environment.wind.wavePeriod` | Float | Second | Temporal duration of the active pitch/heave cycle wave match. |
+| `performance.hull.slamAcceleration` | Float | $G$-Force | Continuous maximum lateral sway acceleration ($Y$-axis displacement). |
+
 ## Physics, Mathematics & Data Calculations
 
 The telemetry engine relies on a mathematical process to extract clean vessel attitude information and calculate wave heights from raw accelerations and angular velocities.
