@@ -143,6 +143,7 @@ def analyze_motion_and_waves(ax, ay, az, gx, gy, gz, lat, lon, knots):
     motion_z_g = true_z - 1.0 - racebox_state["offset_true_z"]
     racebox_state["true_z_g"] = round(motion_z_g, 3)
     
+    # Track raw hull slams continuously along the lateral sway axis (ay)
     if abs(ay) > max_slam_y:
         max_slam_y = abs(ay)
 
@@ -182,7 +183,7 @@ def analyze_motion_and_waves(ax, ay, az, gx, gy, gz, lat, lon, knots):
             racebox_state["last_10_waves"] = wave_history
             update_sea_state_metrics()
             
-            # Forward dynamic wave parameters & peak hull slamming metrics to Signal K
+            # Forward live wave parameters & peak hull slamming metrics to Signal K over UDP
             wave_updates = [
                 {"path": "environment.wind.waveHeight", "value": float(calculated_height)},
                 {"path": "performance.hull.slamAcceleration", "value": float(max_slam_y)}
@@ -270,6 +271,7 @@ def handle_racebox_binary(sender, data: bytearray):
                 ]
                 push_multiple_to_signal_k(gps_updates)
 
+                # Pass execution down into the wave parsing and attitude transformation loops
                 analyze_motion_and_waves(ax, ay, az, gx, gy, gz, lat, lon, knots)
                 asyncio.run_coroutine_threadsafe(broadcast_state(), asyncio.get_event_loop())
             except Exception:
@@ -330,7 +332,6 @@ async def lifespan(app: FastAPI):
     bg_task = asyncio.create_task(bluetooth_pipeline())
     yield
     bg_task.cancel()
-    # Safely close down UDP network resource on application escape
     udp_sock.close()
 
 app = FastAPI(lifespan=lifespan)
@@ -485,7 +486,6 @@ html_content = """
         let currentLat = 0;
         let currentLon = 0;
 
-        // Custom method to map raw inputs onto local chart arrays
         function centerMapOnVessel() {
             if (currentLat !== 0 && currentLon !== 0) {
                 map.setView([currentLat, currentLon], 15);
