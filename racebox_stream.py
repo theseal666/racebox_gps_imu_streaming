@@ -59,14 +59,16 @@ current_log_hour = ""
 current_log_filename = ""
 eco_throttle_counter = 0
 
-def push_to_signal_k_udp(path: str, value: float):
-    """Pushes a single telemetry update to Signal K over local UDP"""
+def push_multiple_to_signal_k(updates_list: list):
+    """Pushes multiple telemetry updates in a single bundled Signal K delta payload over local UDP"""
+    if not updates_list:
+        return
     delta_payload = {
         "context": "vessels.self",
         "updates": [
             {
                 "source": {"label": "karukera-telemetry-hub"},
-                "values": [{"path": path, "value": value}]
+                "values": updates_list
             }
         ]
     }
@@ -131,8 +133,11 @@ def analyze_motion_and_waves(ax, ay, az, gx, gy, gz, lat, lon, knots):
     yaw_accumulator = (yaw_accumulator + (gz * 0.04)) % 360
     
     # Forward attitude paths instantly to Signal K UDP server (converted to radians)
-    push_to_signal_k_udp("navigation.attitude.roll", float(math.radians(roll_deg)))
-    push_to_signal_k_udp("navigation.attitude.pitch", float(math.radians(pitch_deg)))
+    attitude_updates = [
+        {"path": "navigation.attitude.roll", "value": float(math.radians(roll_deg))},
+        {"path": "navigation.attitude.pitch", "value": float(math.radians(pitch_deg))}
+    ]
+    push_multiple_to_signal_k(attitude_updates)
     
     true_z = (ax * math.sin(pitch)) - (ay * math.sin(roll) * math.cos(pitch)) + (az * math.cos(roll) * math.cos(pitch))
     motion_z_g = true_z - 1.0 - racebox_state["offset_true_z"]
@@ -160,9 +165,6 @@ def analyze_motion_and_waves(ax, ay, az, gx, gy, gz, lat, lon, knots):
             calculated_height = round(max(0.1, min(calculated_height, 6.5)), 2)
             racebox_state["current_wave_height"] = calculated_height
             
-            # Forward dynamic calculation to Signal K over UDP using standardized spec paths
-            push_to_signal_k_udp("environment.wind.waveHeight", float(calculated_height))
-            
             clearance_ratio = calculated_height / wave_duration
             if clearance_ratio > 0.6:   steepness = "STEEP / WALL"
             elif clearance_ratio > 0.3: steepness = "MODERATE"
@@ -179,6 +181,13 @@ def analyze_motion_and_waves(ax, ay, az, gx, gy, gz, lat, lon, knots):
             if len(wave_history) > 10: wave_history.pop()
             racebox_state["last_10_waves"] = wave_history
             update_sea_state_metrics()
+            
+            # Forward dynamic wave parameters & peak hull slamming metrics to Signal K
+            wave_updates = [
+                {"path": "environment.wind.waveHeight", "value": float(calculated_height)},
+                {"path": "performance.hull.slamAcceleration", "value": float(max_slam_y)}
+            ]
+            push_multiple_to_signal_k(wave_updates)
             
         max_slam_y = 0.0
 
@@ -228,7 +237,16 @@ def handle_racebox_binary(sender, data: bytearray):
                 
                 knots = round((struct.unpack('<i', payload[48:52])[0] / 1000.0) * 1.94384, 1)
                 racebox_state["speed_knots"] = knots
-                racebox_state["hdop"] = round(struct.unpack('<I', payload[40:44])[0] / 1000.0, 1)
+                
+                # Extract Course Over Ground (COG) and map to true radians
+                raw_cog = struct.unpack('<i', payload[44:48])[0] / 100000.0
+                cog_rad = math.radians(raw_cog % 360)
+
+                # Convert speed in knots to meters per second for the rigid Signal K Spec
+                sog_ms = knots * 0.514444
+
+                hdop_val = round(struct.unpack('<I', payload[40:44])[0] / 1000.0, 1)
+                racebox_state["hdop"] = hdop_val
 
                 volt_raw = payload[67]
                 racebox_state["voltage"] = round(volt_raw / 10.0, 2) if volt_raw > 0 else 4.10
@@ -241,6 +259,16 @@ def handle_racebox_binary(sender, data: bytearray):
                 
                 gx, gy, gz = struct.unpack('<h', payload[74:76])[0]/10.0, struct.unpack('<h', payload[76:78])[0]/10.0, struct.unpack('<h', payload[78:80])[0]/10.0
                 racebox_state["gyro_x"], racebox_state["gyro_y"], racebox_state["gyro_z"] = round(gx,1), round(gy,1), round(gz,1)
+
+                # Bundle and push all standard GNSS telemetry properties to Signal K
+                gps_updates = [
+                    {"path": "navigation.position", "value": {"latitude": lat, "longitude": lon}},
+                    {"path": "navigation.speedOverGround", "value": float(sog_ms)},
+                    {"path": "navigation.courseOverGround", "value": float(cog_rad)},
+                    {"path": "navigation.gnss.hdop", "value": float(hdop_val)},
+                    {"path": "navigation.gnss.satellites", "value": int(racebox_state["satellites"])}
+                ]
+                push_multiple_to_signal_k(gps_updates)
 
                 analyze_motion_and_waves(ax, ay, az, gx, gy, gz, lat, lon, knots)
                 asyncio.run_coroutine_threadsafe(broadcast_state(), asyncio.get_event_loop())
@@ -302,7 +330,7 @@ async def lifespan(app: FastAPI):
     bg_task = asyncio.create_task(bluetooth_pipeline())
     yield
     bg_task.cancel()
-    # Safely tear down UDP resource on exit
+    # Safely close down UDP network resource on application escape
     udp_sock.close()
 
 app = FastAPI(lifespan=lifespan)
@@ -457,6 +485,7 @@ html_content = """
         let currentLat = 0;
         let currentLon = 0;
 
+        // Custom method to map raw inputs onto local chart arrays
         function centerMapOnVessel() {
             if (currentLat !== 0 && currentLon !== 0) {
                 map.setView([currentLat, currentLon], 15);
