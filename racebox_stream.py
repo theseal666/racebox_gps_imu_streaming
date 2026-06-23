@@ -4,6 +4,7 @@ import os
 import json
 import time
 import math
+import httpx
 from datetime import datetime
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -51,6 +52,23 @@ yaw_accumulator = 0.0
 current_log_hour = ""
 current_log_filename = ""
 eco_throttle_counter = 0
+
+async def push_to_signal_k(path: str, value: float):
+    """Asynchronously pushes telemetry measurements straight to the local Signal K delta engine"""
+    url = "http://127.0.0.1:3000/signalk/v1/api/vessels/self"
+    delta_payload = {
+        "updates": [
+            {
+                "source": {"label": "karukera-telemetry-hub"},
+                "values": [{"path": path, "value": value}]
+            }
+        ]
+    }
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(url, json=delta_payload, timeout=0.08)
+    except Exception:
+        pass
 
 def write_to_csv_log(timestamp_str, ax, ay, az, gx, gy, gz, heel, pitch, knots, lat, lon, wave_height):
     global current_log_hour, current_log_filename
@@ -106,6 +124,10 @@ def analyze_motion_and_waves(ax, ay, az, gx, gy, gz, lat, lon, knots):
     racebox_state["heel_deg"] = round(roll_deg, 1)
     yaw_accumulator = (yaw_accumulator + (gz * 0.04)) % 360
     
+    # Forward attitude paths instantly to Signal K (converted to radians)
+    asyncio.create_task(push_to_signal_k("navigation.attitude.roll", float(math.radians(roll_deg))))
+    asyncio.create_task(push_to_signal_k("navigation.attitude.pitch", float(math.radians(pitch_deg))))
+    
     true_z = (ax * math.sin(pitch)) - (ay * math.sin(roll) * math.cos(pitch)) + (az * math.cos(roll) * math.cos(pitch))
     motion_z_g = true_z - 1.0 - racebox_state["offset_true_z"]
     racebox_state["true_z_g"] = round(motion_z_g, 3)
@@ -131,6 +153,9 @@ def analyze_motion_and_waves(ax, ay, az, gx, gy, gz, lat, lon, knots):
             calculated_height = 0.5 * avg_accel * ((wave_duration / 2) ** 2)
             calculated_height = round(max(0.1, min(calculated_height, 6.5)), 2)
             racebox_state["current_wave_height"] = calculated_height
+            
+            # Forward dynamic calculation to Signal K wave track parameters
+            asyncio.create_task(push_to_signal_k("environment.wind.wave.height", float(calculated_height)))
             
             steepness_ratio = calculated_height / wave_duration
             if steepness_ratio > 0.6:   steepness = "STEEP / WALL"
@@ -255,8 +280,7 @@ async def bluetooth_pipeline():
                     await update_status("Connected")
                     await client.start_notify(UART_TX_CHAR_UUID, handle_racebox_binary)
                     
-                    # MODIFIED: Bitflag 0x00 stops internal memory logging while keeping the stream alive
-                    activation_command = bytes([0xB5, 0x62, 0xFF, 0x01, 0x02, 0x00, 0x00, 0x00, 0x02, 0x04])
+                    activation_command = bytes([0xB5, 0x62, 0xFF, 0x01, 0x02, 0x00, 0x01, 0x00, 0x03, 0x04])
                     await client.write_gatt_char(UART_RX_CHAR_UUID, activation_command, response=False)
                     
                     while client.is_connected and not ble_trigger_reset:
