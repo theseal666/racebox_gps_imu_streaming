@@ -1,6 +1,3 @@
-I have processed the repository context from `https://github.com/theseal666/racebox_gps_imu_streaming/`. Here is the final, fully optimized, and complete `README.md` file reflecting your bare-metal setup, the exact repository naming, the updated `0x00` internal memory blocking fix, and the mathematical physics documentation.
-
-```markdown
 # Karukera Telemetry Hub: RaceBox Micro GPS & IMU Streaming
 
 A high-performance, real-time data bridge and analytics dashboard designed to stream high-frequency (25Hz) binary data from a **RaceBox Micro** over Bluetooth Low Energy (BLE) to an interactive local web interface. Optimized for marine deployment, it features live 3D attitude estimation, wave height ledger tracking, rolling G-force/gyro graphs, and automated CSV logging.
