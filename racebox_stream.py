@@ -159,12 +159,12 @@ def analyze_motion_and_waves(ax, ay, az, gx, gy, gz, lat, lon, knots):
             calculated_height = round(max(0.1, min(calculated_height, 6.5)), 2)
             racebox_state["current_wave_height"] = calculated_height
             
-            # Forward dynamic calculation to Signal K wave track parameters
-            asyncio.create_task(push_to_signal_k("environment.wind.wave.height", float(calculated_height)))
+            # Forward dynamic calculation to Signal K wave track parameters using standardized paths
+            asyncio.create_task(push_to_signal_k("environment.wind.waveHeight", float(calculated_height)))
             
-            steepness_ratio = calculated_height / wave_duration
-            if steepness_ratio > 0.6:   steepness = "STEEP / WALL"
-            elif steepness_ratio > 0.3: steepness = "MODERATE"
+            clearance_ratio = calculated_height / wave_duration
+            if clearance_ratio > 0.6:   steepness = "STEEP / WALL"
+            elif clearance_ratio > 0.3: steepness = "MODERATE"
             else:                       steepness = "LONG SWELL"
             
             wave_id_counter += 1
@@ -248,7 +248,28 @@ def handle_racebox_binary(sender, data: bytearray):
 
 async def broadcast_state():
     if connected_sockets:
-        message = json.dumps(racebox_state)
+        # Build the shared state dictionary
+        combined_payload = dict(racebox_state)
+        
+        # Inject standard Signal K components directly into the broadcast frame
+        roll_rad = float(racebox_state["heel_deg"]) * (math.pi / 180.0)
+        pitch_rad = float(racebox_state["pitch_deg"]) * (math.pi / 180.0)
+        wave_height_m = float(racebox_state["avg_wave_height"])
+        
+        combined_payload["context"] = "vessels.self"
+        combined_payload["updates"] = [
+            {
+                "source": {"label": "karukera-telemetry-hub"},
+                "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "values": [
+                    {"path": "navigation.attitude.roll", "value": roll_rad},
+                    {"path": "navigation.attitude.pitch", "value": pitch_rad},
+                    {"path": "environment.wind.waveHeight", "value": wave_height_m}
+                ]
+            }
+        ]
+        
+        message = json.dumps(combined_payload)
         await asyncio.gather(*[ws.send_text(message) for ws in connected_sockets], return_exceptions=True)
 
 async def update_status(new_status: str):
