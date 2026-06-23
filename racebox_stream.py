@@ -1,4 +1,3 @@
-python
 import asyncio
 import struct
 import os
