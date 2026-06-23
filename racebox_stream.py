@@ -28,6 +28,7 @@ racebox_state = {
     "hz": 0,
     "heel_deg": 0.0, "pitch_deg": 0.0, "true_z_g": 0.0,
     "current_wave_height": 0.0,
+    "current_wave_period": 0.0,
     "eco_mode": False,
     "sea_state": "Calm / Glass",
     "avg_wave_height": 0.0,
@@ -132,20 +133,23 @@ def analyze_motion_and_waves(ax, ay, az, gx, gy, gz, lat, lon, knots):
     racebox_state["heel_deg"] = round(roll_deg, 1)
     yaw_accumulator = (yaw_accumulator + (gz * 0.04)) % 360
     
-    # Forward attitude paths instantly to Signal K UDP server (converted to radians)
-    attitude_updates = [
+    # Track raw hull slams continuously along the lateral sway axis (ay)
+    if abs(ay) > max_slam_y:
+        max_slam_y = abs(ay)
+
+    # CRITICAL FIX: Forward attitude AND wave metrics continuously so they never disappear from Signal K
+    telemetry_updates = [
         {"path": "navigation.attitude.roll", "value": float(math.radians(roll_deg))},
-        {"path": "navigation.attitude.pitch", "value": float(math.radians(pitch_deg))}
+        {"path": "navigation.attitude.pitch", "value": float(math.radians(pitch_deg))},
+        {"path": "environment.wind.waveHeight", "value": float(racebox_state["current_wave_height"])},
+        {"path": "environment.wind.wavePeriod", "value": float(racebox_state["current_wave_period"])},
+        {"path": "performance.hull.slamAcceleration", "value": float(max_slam_y)}
     ]
-    push_multiple_to_signal_k(attitude_updates)
+    push_multiple_to_signal_k(telemetry_updates)
     
     true_z = (ax * math.sin(pitch)) - (ay * math.sin(roll) * math.cos(pitch)) + (az * math.cos(roll) * math.cos(pitch))
     motion_z_g = true_z - 1.0 - racebox_state["offset_true_z"]
     racebox_state["true_z_g"] = round(motion_z_g, 3)
-    
-    # Track raw hull slams continuously along the lateral sway axis (ay)
-    if abs(ay) > max_slam_y:
-        max_slam_y = abs(ay)
 
     now = time.time()
     calculated_height = racebox_state["current_wave_height"]
@@ -164,7 +168,10 @@ def analyze_motion_and_waves(ax, ay, az, gx, gy, gz, lat, lon, knots):
             avg_accel = (peak_z * 9.81) 
             calculated_height = 0.5 * avg_accel * ((wave_duration / 2) ** 2)
             calculated_height = round(max(0.1, min(calculated_height, 6.5)), 2)
+            
+            # Save state metrics internally
             racebox_state["current_wave_height"] = calculated_height
+            racebox_state["current_wave_period"] = round(wave_duration, 1)
             
             clearance_ratio = calculated_height / wave_duration
             if clearance_ratio > 0.6:   steepness = "STEEP / WALL"
@@ -182,13 +189,6 @@ def analyze_motion_and_waves(ax, ay, az, gx, gy, gz, lat, lon, knots):
             if len(wave_history) > 10: wave_history.pop()
             racebox_state["last_10_waves"] = wave_history
             update_sea_state_metrics()
-            
-            # Forward live wave parameters & peak hull slamming metrics to Signal K over UDP
-            wave_updates = [
-                {"path": "environment.wind.waveHeight", "value": float(calculated_height)},
-                {"path": "performance.hull.slamAcceleration", "value": float(max_slam_y)}
-            ]
-            push_multiple_to_signal_k(wave_updates)
             
         max_slam_y = 0.0
 
@@ -239,11 +239,8 @@ def handle_racebox_binary(sender, data: bytearray):
                 knots = round((struct.unpack('<i', payload[48:52])[0] / 1000.0) * 1.94384, 1)
                 racebox_state["speed_knots"] = knots
                 
-                # Extract Course Over Ground (COG) and map to true radians
                 raw_cog = struct.unpack('<i', payload[44:48])[0] / 100000.0
                 cog_rad = math.radians(raw_cog % 360)
-
-                # Convert speed in knots to meters per second for the rigid Signal K Spec
                 sog_ms = knots * 0.514444
 
                 hdop_val = round(struct.unpack('<I', payload[40:44])[0] / 1000.0, 1)
@@ -261,7 +258,6 @@ def handle_racebox_binary(sender, data: bytearray):
                 gx, gy, gz = struct.unpack('<h', payload[74:76])[0]/10.0, struct.unpack('<h', payload[76:78])[0]/10.0, struct.unpack('<h', payload[78:80])[0]/10.0
                 racebox_state["gyro_x"], racebox_state["gyro_y"], racebox_state["gyro_z"] = round(gx,1), round(gy,1), round(gz,1)
 
-                # Bundle and push all standard GNSS telemetry properties to Signal K
                 gps_updates = [
                     {"path": "navigation.position", "value": {"latitude": lat, "longitude": lon}},
                     {"path": "navigation.speedOverGround", "value": float(sog_ms)},
@@ -271,7 +267,6 @@ def handle_racebox_binary(sender, data: bytearray):
                 ]
                 push_multiple_to_signal_k(gps_updates)
 
-                # Pass execution down into the wave parsing and attitude transformation loops
                 analyze_motion_and_waves(ax, ay, az, gx, gy, gz, lat, lon, knots)
                 asyncio.run_coroutine_threadsafe(broadcast_state(), asyncio.get_event_loop())
             except Exception:
